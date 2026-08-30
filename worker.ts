@@ -5,10 +5,8 @@ import {
 	storeRawToR2,
 	type InboundQueueMessage,
 } from "./src/lib/email/inbound";
-import { processOutboundQueue, type OutboundQueueMessage } from "./src/lib/email/send";
 import { getDb } from "./src/db";
 import { resolveInboundAddress } from "./src/lib/email/routing";
-import { isInboundQueueMessage } from "./worker-utils";
 import { getUserFromSession } from "./src/lib/auth/session";
 import { getSessionTokenFromRequest } from "./src/lib/realtime/utils";
 import {
@@ -64,26 +62,10 @@ export default {
 				rawR2Key,
 				headers: Object.fromEntries(message.headers),
 			};
-			await env.INBOUND_QUEUE.send(payload);
+			ctx.waitUntil(processInboundMessage(env, payload));
 		} catch (err) {
-			console.error("Inbound enqueue failed", err);
+			console.error("Inbound processing failed", err);
 			message.setReject("Processing failed");
-		}
-	},
-
-	async queue(batch: MessageBatch, env: CloudflareEnv): Promise<void> {
-		for (const msg of batch.messages) {
-			try {
-				if (isInboundQueueMessage(msg.body)) {
-					await processInboundMessage(env, msg.body);
-				} else {
-					await processOutboundQueue(env, msg.body as OutboundQueueMessage);
-				}
-				msg.ack();
-			} catch (err) {
-				console.error("Queue processing failed", err);
-				msg.retry({ delaySeconds: 10 });
-			}
 		}
 	},
 } satisfies ExportedHandler<CloudflareEnv>;
