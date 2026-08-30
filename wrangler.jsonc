@@ -8,6 +8,9 @@
 		"nodejs_compat",
 		"global_fetch_strictly_public"
 	],
+	"vars": {
+		"CF_EMAIL_WORKER_NAME": "mailflare"
+	},
 	"assets": {
 		"binding": "ASSETS",
 		"directory": ".open-next/assets",
