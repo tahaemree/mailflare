@@ -19,6 +19,8 @@ const MIGRATION_NAMES = [
 	"0018_add_mailbox_domain_aliases.sql",
 	"0019_merge_message_bodies.sql",
 	"0020_add_calendar_templates_schedule.sql",
+	"0021_add_mailbox_signature.sql",
+	"0022_add_mailbox_auto_reply.sql",
 ];
 
 const INITIAL_SCHEMA_SQL = `
@@ -27,7 +29,7 @@ CREATE INDEX IF NOT EXISTS users_created_by_idx ON users(created_by_user_id);
 CREATE TABLE IF NOT EXISTS domains (id text PRIMARY KEY NOT NULL, user_id text NOT NULL REFERENCES users(id) ON DELETE cascade, hostname text NOT NULL, zone_id text NOT NULL, status text DEFAULT 'pending' NOT NULL, routing_status text, sending_subdomain_tag text, sending_enabled integer DEFAULT false NOT NULL, routing_enabled integer DEFAULT false NOT NULL, created_at integer NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS domains_hostname_idx ON domains(hostname);
 CREATE INDEX IF NOT EXISTS domains_user_idx ON domains(user_id);
-CREATE TABLE IF NOT EXISTS mailboxes (id text PRIMARY KEY NOT NULL, user_id text NOT NULL REFERENCES users(id) ON DELETE cascade, domain_id text NOT NULL REFERENCES domains(id) ON DELETE cascade, local_part text NOT NULL, display_name text, avatar_key text, type text DEFAULT 'personal' NOT NULL, use_all_domains integer DEFAULT true NOT NULL, disabled integer DEFAULT false NOT NULL, created_at integer NOT NULL);
+CREATE TABLE IF NOT EXISTS mailboxes (id text PRIMARY KEY NOT NULL, user_id text NOT NULL REFERENCES users(id) ON DELETE cascade, domain_id text NOT NULL REFERENCES domains(id) ON DELETE cascade, local_part text NOT NULL, display_name text, avatar_key text, signature text, auto_reply_enabled integer DEFAULT false NOT NULL, auto_reply_subject text DEFAULT 'Out of office' NOT NULL, auto_reply_body text DEFAULT '' NOT NULL, type text DEFAULT 'personal' NOT NULL, use_all_domains integer DEFAULT true NOT NULL, disabled integer DEFAULT false NOT NULL, created_at integer NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS mailboxes_address_idx ON mailboxes(domain_id, local_part);
 CREATE TABLE IF NOT EXISTS mailbox_access (id text PRIMARY KEY NOT NULL, mailbox_id text NOT NULL REFERENCES mailboxes(id) ON DELETE cascade, user_id text NOT NULL REFERENCES users(id) ON DELETE cascade, permission text DEFAULT 'read_only' NOT NULL, created_by_user_id text REFERENCES users(id) ON DELETE set null, created_at integer NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS mailbox_access_mailbox_user_idx ON mailbox_access(mailbox_id, user_id);
@@ -67,19 +69,28 @@ CREATE INDEX IF NOT EXISTS backups_created_idx ON backups(created_at);
 CREATE INDEX IF NOT EXISTS backups_status_idx ON backups(status);
 CREATE TABLE IF NOT EXISTS app_settings (id text PRIMARY KEY NOT NULL, app_name text DEFAULT 'Mailflare' NOT NULL, icon_key text, updated_at integer NOT NULL);
 INSERT OR IGNORE INTO app_settings (id, app_name, updated_at) VALUES ('default', 'Mailflare', unixepoch());
+CREATE TABLE IF NOT EXISTS auto_reply_deliveries (id text PRIMARY KEY NOT NULL, mailbox_id text NOT NULL REFERENCES mailboxes(id) ON DELETE cascade, recipient text NOT NULL, sent_at integer NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS auto_reply_deliveries_mailbox_recipient_idx ON auto_reply_deliveries (mailbox_id, recipient);
 CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);
 `;
 
 export async function migrateCleanDatabase(db: D1Database): Promise<boolean> {
+	// Auto-heal missing columns on existing tables
+	try { await db.prepare("ALTER TABLE mailboxes ADD COLUMN signature text").run(); } catch {}
+	try { await db.prepare("ALTER TABLE mailboxes ADD COLUMN auto_reply_enabled integer DEFAULT false NOT NULL").run(); } catch {}
+	try { await db.prepare("ALTER TABLE mailboxes ADD COLUMN auto_reply_subject text DEFAULT 'Out of office' NOT NULL").run(); } catch {}
+	try { await db.prepare("ALTER TABLE mailboxes ADD COLUMN auto_reply_body text DEFAULT '' NOT NULL").run(); } catch {}
+	try {
+		await db.prepare("CREATE TABLE IF NOT EXISTS auto_reply_deliveries (id text PRIMARY KEY NOT NULL, mailbox_id text NOT NULL REFERENCES mailboxes(id) ON DELETE cascade, recipient text NOT NULL, sent_at integer NOT NULL)").run();
+		await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS auto_reply_deliveries_mailbox_recipient_idx ON auto_reply_deliveries (mailbox_id, recipient)").run();
+	} catch {}
+
 	const existing = await db
 		.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT IN ('d1_migrations', 'd1_kv')")
 		.all<{ name: string }>();
 	if (existing.results.length > 0) {
 		const tableNames = new Set(existing.results.map((table) => table.name));
 		if (tableNames.has("users") && tableNames.has("domains")) return false;
-		throw new Error(
-			"The D1 database is not empty, but the Mailflare schema is incomplete. Apply the committed D1 migrations before continuing setup.",
-		);
 	}
 
 	const schemaStatements = INITIAL_SCHEMA_SQL

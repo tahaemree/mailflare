@@ -48,6 +48,16 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: "Email already registered" }, { status: 409 });
 	}
 
+	// Auto-heal missing mailbox columns in D1 if they do not exist yet
+	try { await env.DB.prepare("ALTER TABLE mailboxes ADD COLUMN signature text").run(); } catch {}
+	try { await env.DB.prepare("ALTER TABLE mailboxes ADD COLUMN auto_reply_enabled integer DEFAULT false NOT NULL").run(); } catch {}
+	try { await env.DB.prepare("ALTER TABLE mailboxes ADD COLUMN auto_reply_subject text DEFAULT 'Out of office' NOT NULL").run(); } catch {}
+	try { await env.DB.prepare("ALTER TABLE mailboxes ADD COLUMN auto_reply_body text DEFAULT '' NOT NULL").run(); } catch {}
+	try {
+		await env.DB.prepare("CREATE TABLE IF NOT EXISTS auto_reply_deliveries (id text PRIMARY KEY NOT NULL, mailbox_id text NOT NULL REFERENCES mailboxes(id) ON DELETE cascade, recipient text NOT NULL, sent_at integer NOT NULL)").run();
+		await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS auto_reply_deliveries_mailbox_recipient_idx ON auto_reply_deliveries (mailbox_id, recipient)").run();
+	} catch {}
+
 	const userId = newId("usr");
 	await db.insert(users).values({
 		id: userId,
