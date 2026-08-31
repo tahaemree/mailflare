@@ -10,7 +10,8 @@ import { getSendErrorStatus } from "@/app/api/send/error-utils";
 
 export async function POST(request: Request) {
 	const env = getEnv();
-	const auth = await authenticateApiKey(env, request.headers.get("authorization"));
+	const authHeader = request.headers.get("authorization") || request.headers.get("x-api-key");
+	const auth = await authenticateApiKey(env, authHeader);
 	if (!auth || !requireScope(auth.scopes, "send")) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { domains, mailboxes, users } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
@@ -13,9 +13,25 @@ export async function getAuthorizedSenderAddress(
 		mailboxId?: string | null;
 	},
 ): Promise<{ fromAddr: string; mailboxId: string }> {
-	if (!input.mailboxId) throw new Error("Mailbox is required");
-
 	const db = getDb(env);
+	let targetMailboxId = input.mailboxId;
+
+	if (!targetMailboxId) {
+		const requestedAddress = getEmailAddress(input.from).toLowerCase();
+		const [localPart, hostname] = requestedAddress.split("@");
+		if (localPart && hostname) {
+			const [match] = await db
+				.select({ id: mailboxes.id })
+				.from(mailboxes)
+				.innerJoin(domains, eq(mailboxes.domainId, domains.id))
+				.where(and(eq(mailboxes.localPart, localPart), eq(domains.hostname, hostname)))
+				.limit(1);
+			if (match) targetMailboxId = match.id;
+		}
+	}
+
+	if (!targetMailboxId) throw new Error("Mailbox is required or could not be resolved from sender address");
+
 	const [mailbox] = await db
 		.select({
 		localPart: mailboxes.localPart,
@@ -27,7 +43,7 @@ export async function getAuthorizedSenderAddress(
 		})
 		.from(mailboxes)
 		.innerJoin(domains, eq(mailboxes.domainId, domains.id))
-		.where(eq(mailboxes.id, input.mailboxId))
+		.where(eq(mailboxes.id, targetMailboxId))
 		.limit(1);
 
 	if (!mailbox) throw new Error("Mailbox not found");

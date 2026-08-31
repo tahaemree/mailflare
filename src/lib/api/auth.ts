@@ -13,8 +13,8 @@ export async function authenticateApiKey(
 	env: CloudflareEnv,
 	authorization: string | null,
 ): Promise<ApiAuthResult | null> {
-	if (!authorization?.startsWith("Bearer ")) return null;
-	const key = authorization.slice(7).trim();
+	if (!authorization) return null;
+	const key = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : authorization.trim();
 	if (!key) return null;
 
 	const prefix = key.slice(0, 12);

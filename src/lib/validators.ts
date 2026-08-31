@@ -7,7 +7,7 @@ export const sendEmailSchema = z.object({
 	subject: z.string().min(1).max(500),
 	html: z.string().max(2 * 1024 * 1024).optional(),
 	text: z.string().max(2 * 1024 * 1024).optional(),
-	mailboxId: z.string().min(1).max(200),
+	mailboxId: z.string().min(1).max(200).optional(),
 	attachments: z
 		.array(
 			z.object({
