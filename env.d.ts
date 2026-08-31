@@ -22,5 +22,6 @@ interface CloudflareEnv {
 	CF_EMAIL_WORKER_NAME?: string;
 	GITHUB_UPDATE_TOKEN?: string;
 	GITHUB_UPDATE_REF?: string;
-	GITHUB_UPDATE_REPO?: string
+	GITHUB_UPDATE_REPO?: string;
+	RESEND_API_KEY?: string;
 }

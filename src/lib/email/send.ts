@@ -70,34 +70,61 @@ export async function sendEmail(env: CloudflareEnv, input: SendEmailInput): Prom
 	});
 
 	try {
-		const response = await env.EMAIL.send({
-			from: sender.fromAddr,
-			to: input.to,
-			subject: input.subject,
-			headers: input.headers,
-			html: input.html,
-			text: input.text,
-			attachments: attachments.map((attachment) =>
-				attachment.disposition === "inline" && attachment.contentId
-					? {
-							filename: attachment.filename,
-							type: attachment.type,
-							content: attachment.content,
-							disposition: "inline" as const,
-							contentId: attachment.contentId,
-						}
-					: {
-							filename: attachment.filename,
-							type: attachment.type,
-							content: attachment.content,
-							disposition: "attachment" as const,
-						},
-			),
-		});
+		let providerMessageId = "";
+
+		if (env.RESEND_API_KEY) {
+			const resendRes = await fetch("https://api.resend.com/emails", {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${env.RESEND_API_KEY}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					from: sender.fromAddr,
+					to: [input.to],
+					subject: input.subject,
+					html: input.html || undefined,
+					text: input.text || undefined,
+					headers: input.headers || undefined,
+				}),
+			});
+			if (!resendRes.ok) {
+				const errorJson = (await resendRes.json().catch(() => null)) as { message?: string } | null;
+				throw new Error(errorJson?.message || `Resend dispatch failed with HTTP ${resendRes.status}`);
+			}
+			const resendData = (await resendRes.json()) as { id?: string };
+			providerMessageId = resendData.id || "resend_sent";
+		} else {
+			const response = await env.EMAIL.send({
+				from: sender.fromAddr,
+				to: input.to,
+				subject: input.subject,
+				headers: input.headers,
+				html: input.html,
+				text: input.text,
+				attachments: attachments.map((attachment) =>
+					attachment.disposition === "inline" && attachment.contentId
+						? {
+								filename: attachment.filename,
+								type: attachment.type,
+								content: attachment.content,
+								disposition: "inline" as const,
+								contentId: attachment.contentId,
+							}
+						: {
+								filename: attachment.filename,
+								type: attachment.type,
+								content: attachment.content,
+								disposition: "attachment" as const,
+							},
+				),
+			});
+			providerMessageId = response.messageId;
+		}
 
 		await db
 			.update(messages)
-			.set({ status: "sent", providerMessageId: response.messageId })
+			.set({ status: "sent", providerMessageId })
 			.where(eq(messages.id, messageId));
 		await db.update(outboundJobs).set({ status: "sent", updatedAt: new Date() }).where(eq(outboundJobs.id, jobId));
 
