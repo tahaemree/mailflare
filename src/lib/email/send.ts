@@ -130,7 +130,7 @@ export async function sendEmail(env: CloudflareEnv, input: SendEmailInput): Prom
 
 		await dispatchWebhooks(env, input.userId, "message.outbound", {
 			messageId,
-			providerMessageId: response.messageId,
+			providerMessageId,
 			to: input.to,
 		});
 		await createAuditLog(env, {
