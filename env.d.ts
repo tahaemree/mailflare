@@ -68,6 +68,10 @@ interface CloudflareEnv {
 	GITHUB_UPDATE_TOKEN?: string;
 	GITHUB_UPDATE_REF?: string;
 	GITHUB_UPDATE_REPO?: string;
+	/** Worker name for Email Routing rules (wrangler.jsonc vars). */
+	CF_EMAIL_WORKER_NAME?: string;
+	/** Resend key used when none is saved in the app. */
+	RESEND_API_KEY?: string;
 	/** "node" when served by the self-hosted runtime in server/; unset on Workers. */
 	MAILFLARE_RUNTIME?: "node";
 	/** Shared secret the Cloudflare email relay signs inbound webhooks with (self-hosted only). */

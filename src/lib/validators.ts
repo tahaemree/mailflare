@@ -46,6 +46,11 @@ export const sendEmailSchema = z.object({
 		.optional(),
 });
 
+/** The public API may omit `mailboxId`; `/api/v1/send` then resolves it from `from`. */
+export const apiSendEmailSchema = sendEmailSchema.extend({
+	mailboxId: z.string().min(1).max(200).optional(),
+});
+
 export const registerSchema = z.object({
 	email: z.string().email(),
 	password: z.string().min(8),

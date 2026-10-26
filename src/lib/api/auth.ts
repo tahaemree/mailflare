@@ -13,6 +13,25 @@ export async function authenticateApiKey(
 	return authenticateApiKeyValue(env, authorization.slice(7));
 }
 
+/**
+ * The send API also takes the key the way other mail APIs do: `Authorization: Bearer <key>`,
+ * a bare key in `Authorization`, or an `X-API-Key` header. HTTP auth schemes other than
+ * Bearer (Basic, Digest, ...) are not keys and are rejected.
+ */
+export async function authenticateApiKeyFromHeaders(
+	env: CloudflareEnv,
+	headers: Headers,
+): Promise<ApiAuthResult | null> {
+	const authorization = headers.get("authorization")?.trim();
+	if (authorization) {
+		if (authorization.startsWith("Bearer ")) return authenticateApiKeyValue(env, authorization.slice(7));
+		if (!/\s/.test(authorization)) return authenticateApiKeyValue(env, authorization);
+		return null;
+	}
+	const apiKey = headers.get("x-api-key")?.trim();
+	return apiKey ? authenticateApiKeyValue(env, apiKey) : null;
+}
+
 export const requireScope = hasScope;
 
 /**

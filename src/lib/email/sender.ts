@@ -1,10 +1,40 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { domains, mailboxes, users } from "@/db/schema";
+import { domains, mailboxAliases, mailboxes, users } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { formatEmailAddress, getEmailAddress } from "@/lib/email/address";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
 import { resolveMailboxDisplayName } from "@/lib/profile/identity-utils";
+
+/**
+ * Find the mailbox that owns a sender address, for API callers that send `from` without a
+ * `mailboxId`. Matches the mailbox's own address first, then its aliases. This only picks a
+ * candidate; `getAuthorizedSenderAddress` still checks that the caller may send from it.
+ */
+export async function resolveSenderMailboxId(env: CloudflareEnv, from: string): Promise<string | null> {
+	const address = getEmailAddress(from).toLowerCase();
+	const at = address.lastIndexOf("@");
+	if (at <= 0 || at === address.length - 1) return null;
+	const localPart = address.slice(0, at);
+	const hostname = address.slice(at + 1);
+
+	const db = getDb(env);
+	const [mailbox] = await db
+		.select({ id: mailboxes.id })
+		.from(mailboxes)
+		.innerJoin(domains, eq(mailboxes.domainId, domains.id))
+		.where(and(eq(mailboxes.localPart, localPart), eq(domains.hostname, hostname)))
+		.limit(1);
+	if (mailbox) return mailbox.id;
+
+	const [alias] = await db
+		.select({ id: mailboxAliases.mailboxId })
+		.from(mailboxAliases)
+		.innerJoin(domains, eq(mailboxAliases.domainId, domains.id))
+		.where(and(eq(mailboxAliases.localPart, localPart), eq(domains.hostname, hostname)))
+		.limit(1);
+	return alias?.id ?? null;
+}
 
 export async function getAuthorizedSenderAddress(
 	env: CloudflareEnv,

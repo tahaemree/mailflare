@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getEnv } from "@/lib/cloudflare";
-import { authenticateApiKey, requireScope } from "@/lib/api/auth";
-import { sendEmailSchema } from "@/lib/validators";
+import { authenticateApiKeyFromHeaders, requireScope } from "@/lib/api/auth";
+import { apiSendEmailSchema } from "@/lib/validators";
 import { sendEmail } from "@/lib/email/send";
+import { resolveSenderMailboxId } from "@/lib/email/sender";
 import { decodeBase64Content } from "@/lib/email/attachments";
 import { readJsonBody } from "@/lib/http/request";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
@@ -10,7 +11,7 @@ import { getSendErrorStatus } from "@/app/api/send/error-utils";
 
 export async function POST(request: Request) {
 	const env = getEnv();
-	const auth = await authenticateApiKey(env, request.headers.get("authorization"));
+	const auth = await authenticateApiKeyFromHeaders(env, request.headers);
 	if (!auth || !requireScope(auth.scopes, "send")) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
@@ -22,11 +23,14 @@ export async function POST(request: Request) {
 		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
 		return NextResponse.json({ error: "Invalid send request" }, { status });
 	}
-	const parsed = sendEmailSchema.safeParse(body);
+	const parsed = apiSendEmailSchema.safeParse(body);
 	if (!parsed.success) {
 		return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 	}
-	if (auth.mailboxIds && !auth.mailboxIds.includes(parsed.data.mailboxId)) {
+	// `mailboxId` is optional for API callers: resolve it from the sender address. Access is still
+	// checked below (the key's mailbox scope) and in sendEmail (mailbox permission, sender address).
+	const mailboxId = parsed.data.mailboxId ?? (await resolveSenderMailboxId(env, parsed.data.from));
+	if (!mailboxId || (auth.mailboxIds && !auth.mailboxIds.includes(mailboxId))) {
 		return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
 	}
 
@@ -35,6 +39,7 @@ export async function POST(request: Request) {
 		const result = await sendEmail(env, {
 			userId: auth.userId,
 			...fields,
+			mailboxId,
 			publicOrigin: new URL(request.url).origin,
 			attachments: attachments?.map((attachment) => ({
 				filename: attachment.filename,

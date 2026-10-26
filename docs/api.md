@@ -147,7 +147,7 @@ rules. If cleanup itself fails, the response reports that manual checking is nee
 
 ## Sending email
 
-Send email through `POST /api/v1/send`. `to`, `cc` and `bcc` accept either a comma-separated header string or an array of addresses; each entry may carry a display name (`"Maya Chen" <maya@example.net>`). A message can reach up to 50 recipients across the three fields. Attachments are optional and use Base64-encoded content:
+Send email through `POST /api/v1/send`. `to`, `cc` and `bcc` accept either a comma-separated header string or an array of addresses; each entry may carry a display name (`"Maya Chen" <maya@example.net>`). A message can reach up to 50 recipients across the three fields. `mailboxId` is optional: when it is omitted, the mailbox is resolved from the `from` address (its own address or an alias). The key may be sent as `Authorization: Bearer <key>`, as a bare key in `Authorization`, or in an `X-API-Key` header. Attachments are optional and use Base64-encoded content:
 
 ```json
 {
